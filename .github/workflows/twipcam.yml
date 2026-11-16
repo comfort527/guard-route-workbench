@@ -1,0 +1,29 @@
+name: 更新 twipcam 攝影機清單
+on:
+  schedule:
+    - cron: '23 19 * * *'   # 每天台灣時間 03:23
+  workflow_dispatch:
+permissions:
+  contents: write
+  pages: write
+concurrency:
+  group: twipcam
+  cancel-in-progress: false
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 抓清單
+        run: python3 tools/twipcam.py cams-extra.json
+      - name: 有變動才提交
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git diff --quiet -- cams-extra.json; then echo "沒有變動"; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add cams-extra.json
+          git commit -m "更新 twipcam 攝影機清單"
+          git push
+          gh api -X POST "repos/${{ github.repository }}/pages/builds" || true
