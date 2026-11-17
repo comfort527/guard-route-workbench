@@ -11,6 +11,7 @@
   thsr/YYYY-MM-DD.json   高鐵每日時刻表
   tra-stations.json      台鐵車站
   tra/YYYY-MM-DD.json    台鐵每日時刻表（精簡：[車次資訊, [[站碼, 到站, 離站], ...]]）
+  cctv/<來源>.json       道路攝影機清單（Freeway、Highway、City-<縣市>；只留網頁用到的欄位）
 """
 import json, os, sys, time, gzip, datetime, urllib.request, urllib.parse, urllib.error
 
@@ -19,6 +20,10 @@ TW = datetime.timezone(datetime.timedelta(hours=8))
 GAP = 12.5          # 一般會員每分鐘最多 5 次
 THSR_DAYS = 14      # 高鐵每日時刻表預抓天數
 TRA_DAYS = 8        # 台鐵每日時刻表預抓天數（今天起）
+CCTV_SRC = ['Freeway', 'Highway'] + ['City/' + c for c in (
+    'Taipei NewTaipei Keelung Taoyuan Hsinchu HsinchuCounty MiaoliCounty Taichung ChanghuaCounty NantouCounty YunlinCounty '
+    'Chiayi ChiayiCounty Tainan Kaohsiung PingtungCounty YilanCounty HualienCounty TaitungCounty PenghuCounty KinmenCounty LienchiangCounty').split()]
+CCTV_F = ('CCTVID', 'PositionLat', 'PositionLon', 'RoadName', 'SurveillanceDescription', 'RoadDirection', 'LocationMile', 'RoadSection', 'VideoStreamURL', 'VideoImageURL')
 _last = [0.0]
 
 
@@ -33,7 +38,7 @@ def token():
         return json.load(r)['access_token']
 
 
-def get(tok, ver, path):
+def get(tok, ver, path, empty_codes=(404,)):
     for attempt in range(3):
         wait = _last[0] + GAP - time.time()
         if wait > 0:
@@ -50,7 +55,7 @@ def get(tok, ver, path):
         except urllib.error.HTTPError as e:
             if e.code == 429 and attempt < 2:
                 time.sleep(61); continue
-            if e.code == 404:
+            if e.code in empty_codes:
                 return None
             raise
     return None
@@ -127,14 +132,30 @@ def main(out):
             if len(a) > 100:
                 dump(f'{out}/tra/{d}.json', tra_compact(a)); man['tra'].append(d)
 
-    for name, fn in (('航班', air), ('高鐵定期', thsr_general), ('高鐵每日', thsr_days), ('台鐵車站', tra_stations), ('台鐵每日', tra_days)):
+    def cctv():
+        import re
+        man['cctv'] = {}
+        odd = []
+        for src in CCTV_SRC:
+            try:   # 縣市沒有資料時 TDX 會回 404 或 400：當作沒有攝影機
+                j = get(tok, 'v2', f'Road/Traffic/CCTV/{src}', empty_codes=(404, 400) if src.startswith('City/') else (404,))
+            except Exception as e:
+                errs.append(f'攝影機 {src}: {type(e).__name__} {getattr(e, "code", "")}'); continue
+            a = [{k: x[k] for k in CCTV_F if k in x} for x in arr(j, 'CCTVs')] if j is not None else []
+            dump(f'{out}/cctv/{src.replace("/", "-")}.json', a); man['cctv'][src] = len(a)
+            # 檢查影像網址是否帶有會過期的通行碼（只印統計，不印網址）
+            n = sum(1 for x in a if re.search(r'(token|expire|exp=|sig=|signature|auth|key=)', (x.get('VideoStreamURL') or '') + (x.get('VideoImageURL') or ''), re.I))
+            if n: odd.append(f'{src} {n}/{len(a)}')
+        print('攝影機網址疑似含通行碼：' + ('、'.join(odd) if odd else '沒有'))
+
+    for name, fn in (('航班', air), ('高鐵定期', thsr_general), ('高鐵每日', thsr_days), ('台鐵車站', tra_stations), ('台鐵每日', tra_days), ('攝影機', cctv)):
         step(name, fn)
     if not any(k in man for k in ('air', 'thsrGeneral', 'traStations')) and not man['thsr'] and not man['tra']:
         sys.exit('全部失敗，不發布：' + '；'.join(errs))
     dump(f'{out}/manifest.json', man)
     size = sum(os.path.getsize(os.path.join(r, f)) for r, _, fs in os.walk(out) for f in fs)
     print(f"完成：航班 {man.get('air', '失敗')}、高鐵定期 {man.get('thsrGeneral', '失敗')}、高鐵每日 {len(man['thsr'])} 天、"
-          f"台鐵車站 {man.get('traStations', '失敗')}、台鐵每日 {len(man['tra'])} 天；共 {size/1024:.0f} KB")
+          f"台鐵車站 {man.get('traStations', '失敗')}、台鐵每日 {len(man['tra'])} 天、攝影機 {len(man.get('cctv', {}))} 份 {sum(man.get('cctv', {}).values())} 支；共 {size/1024:.0f} KB")
     if errs:
         print('部分失敗：' + '；'.join(errs))
 
