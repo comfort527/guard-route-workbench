@@ -1,0 +1,30 @@
+name: 預抓 TDX 航班、高鐵、台鐵資料
+on:
+  schedule:
+    - cron: '17 19 * * *'   # 每天台灣時間 03:17
+    - cron: '17 7 * * *'    # 每天台灣時間 15:17
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: tdx-data
+  cancel-in-progress: false
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 抓資料
+        env:
+          TDX_CLIENT_ID: ${{ secrets.TDX_CLIENT_ID }}
+          TDX_CLIENT_SECRET: ${{ secrets.TDX_CLIENT_SECRET }}
+        run: python3 tools/tdx_prefetch.py out
+      - name: 發布到 tdx-data 分支（只保留最新一份，不累積歷史）
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd out
+          git init -q -b tdx-data
+          git add -A
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -q -m "TDX 預抓資料 $(TZ=Asia/Taipei date '+%F %R')"
+          git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" tdx-data
