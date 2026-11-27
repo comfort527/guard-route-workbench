@@ -351,7 +351,7 @@ function loPop(open){$('#loPop').hidden=!open;$('#loBadge').setAttribute('aria-e
 function loStart(){
   if(!navigator.geolocation) return loMsg('這個瀏覽器不能定位。',true);
   if(!isSecureContext) return loMsg('要用 https 網址開啟才能定位。',true);
-  LO.on=true;loDock(true);$('#lo').classList.add('on');$('#loStop').hidden=false;$('#loTitle').textContent=V.d.lo.m?'正在回傳你的位置給分享人和同一趟的人':'正在回傳你的位置給分享人';loMsg('定位中…');
+  LO.on=true;loDock(true);$('#lo').classList.add('on');$('#loStop').hidden=false;$('#loTitle').textContent='正在回傳你的位置';loMsg('定位中…');
   LO.watch=navigator.geolocation.watchPosition(loPos,loErr,{enableHighAccuracy:true,maximumAge:5000,timeout:20000});
   clearInterval(LO.timer);LO.timer=setInterval(()=>{loSend(false);loPeers();},10000);
   loWake();
