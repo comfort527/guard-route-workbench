@@ -181,7 +181,7 @@ async function boot(){
   if(!d.k) return die('key');
   try{await loadMaps(d.k);}catch{return die('net');}
   if(V.dead) return;
-  if(d.lo?.g&&d.lo.u&&d.lo.id&&d.lo.w){V.gated=true;loInit();gateShow();}   // 要先回傳位置才看得到
+  if(d.lo&&d.lo.u&&d.lo.id&&d.lo.w){V.gated=true;loInit();gateShow();}   // 有請對方回傳位置的連結（包括之前建的）：要先回傳位置才看得到
   else build();
   $('#cover').hidden=true;
   setInterval(check,30e3);
