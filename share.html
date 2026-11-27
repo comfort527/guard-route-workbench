@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex,nofollow">
 <meta name="theme-color" content="#2d8e95">
-<title>路線分享</title>
+<title>旅遊平台</title>
 <style>
 :root{--bg:#eceff3;--surface:#ffffff;--border:#dce1e7;--text:#15202b;--muted:#5b6876;--warn:#a85a00;--warn-soft:#fff3dc;--del:#b93226;--ac:#176a70;--on-ac:#ffffff;
   --it-aside:#f1ede6;--it-line:#e3ddd3;--it-sub:#71818c;--it-code:#637982;--it-sel:#438c85;--it-sel-bg:#e8f8f3;--it-stop-line:#c3d6d2;--it-item-bg:rgba(255,255,255,.79);--it-item-line:#ffffff;--it-white:#ffffff;--it-mixto:#1d1d26;--it-pill-line:#ddd6ca;--it-miss:#9a5d17;--acc-itin:#4fae94;
@@ -28,7 +28,7 @@ button{font:inherit;color:inherit}
 .mapwrap{grid-row:2;position:relative;min-height:0;background:#dfe5e9}
 #map{position:absolute;inset:0}
 .grab{display:none}
-/* 行程資訊區（跟工作台同樣子） */
+/* 行程資訊區 */
 .sec{--acc:var(--acc-itin);border:1px solid color-mix(in srgb,var(--acc) 38%,var(--it-white));border-radius:18px;background:color-mix(in srgb,var(--acc) 9%,var(--it-white));padding:9px}
 .sec-h{display:flex;align-items:baseline;gap:8px;padding:2px 4px 6px}
 .eyebrow{font-size:17px;font-weight:700;color:color-mix(in srgb,var(--acc) 62%,var(--it-mixto))}
@@ -104,6 +104,7 @@ button{font:inherit;color:inherit}
 .gate-go{width:100%;max-width:300px;height:48px;font-size:17px}
 .gate-go:disabled{opacity:.6}
 .gate-exp{margin-top:12px!important;font-size:13.5px!important}
+.vtoast{position:fixed;left:50%;top:calc(var(--mh) + 12px);transform:translateX(-50%);z-index:40;max-width:calc(100vw - 24px);padding:9px 14px;border-radius:12px;background:#15202b;color:#fff;font-size:14.5px;box-shadow:var(--shadow)}
 .spin{width:36px;height:36px;border-radius:50%;border:4px solid var(--it-line);border-top-color:var(--it-sel);animation:sp 1s linear infinite;margin:0 auto}
 @keyframes sp{to{transform:rotate(360deg)}}
 @media (max-width:899px){
@@ -121,7 +122,7 @@ button{font:inherit;color:inherit}
 </head>
 <body>
 <div class="app" id="app" hidden>
-  <header class="top"><span class="pill">路線分享</span><span class="ro">只能看</span><button class="lo-badge" id="loBadge" hidden aria-expanded="false" title="正在回傳你的位置（點一下查看或停止）" aria-label="正在回傳你的位置，點一下查看或停止"><i></i></button><span class="exp" id="exp"></span></header>
+  <header class="top"><span class="pill">旅遊平台</span><span class="ro">只能看</span><button class="lo-badge" id="loBadge" hidden aria-expanded="false" title="正在回傳你的位置（點一下查看或停止）" aria-label="正在回傳你的位置，點一下查看或停止"><i></i></button><span class="exp" id="exp"></span></header>
   <div class="lo-pop" id="loPop" hidden></div>
   <aside class="side" id="side">
     <button class="grab" id="grab" aria-label="展開或收起行程資訊"></button>
@@ -143,11 +144,12 @@ button{font:inherit;color:inherit}
     <div class="tools"><button class="tbtn" id="fitBtn" title="看整條路線" aria-label="看整條路線"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button><button class="tbtn" id="layBtn" title="換成衛星空照" aria-label="切換地圖或衛星">衛星</button></div>
   </div>
 </div>
+<div class="vtoast" id="vtoast" hidden></div>
 <div class="cover gate" id="gate" hidden><div class="box"><div class="ic">📍</div><h1>回傳我的位置後才可查看</h1><p id="gateTxt"></p><button class="lo-go gate-go" id="gateGo">回傳我的位置</button><p class="gate-exp" id="gateExp"></p></div></div>
 <div class="cover" id="cover"><div class="box"><div class="spin"></div><p style="margin-top:14px">載入路線中…</p></div></div>
 <script>
 'use strict';
-/* 路線分享（只能看）：路線資料就在連結 # 後面（gzip＋base64url），打開時在 Google 地圖上重新規劃路線。 */
+/* 分享頁（只能看）：路線資料就在連結 # 後面（gzip＋base64url），打開時在 Google 地圖上重新規劃路線。 */
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const when=t=>{const d=new Date(t);return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;};
@@ -171,10 +173,22 @@ function die(kind){
 }
 async function boot(){
   const h=location.hash.slice(1);
-  if(h.length<40) return die('bad');
-  if(!window.DecompressionStream) return die('old');
+  if(!window.DecompressionStream||!crypto?.subtle) return die('old');
+  const unzip=async u8=>JSON.parse(await new Response(new Blob([u8]).stream().pipeThrough(new DecompressionStream('gzip'))).text());
   let d;
-  try{d=JSON.parse(await new Response(new Blob([b64(h)]).stream().pipeThrough(new DecompressionStream('gzip'))).text());}catch{return die('bad');}
+  if(h.startsWith('s/')){   // 短連結：#s/代碼/鑰匙/Worker 主機，資料從分享人自己的 Cloudflare 讀回再解密
+    const [,sid,key,host]=h.split('/');
+    if(!/^[a-z0-9]{6,24}$/.test(sid||'')||!/^[\w-]{20,}$/.test(key||'')||!/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(host||'')) return die('bad');
+    let r;try{r=await fetch(`https://${host}/blob/${sid}`,{cache:'no-store'});}catch{return die('net');}
+    if(r.status===404||r.status===410) return die('exp');
+    if(!r.ok) return die('net');
+    try{const j=await r.json(),[iv,ct]=String(j.data).split('.');V.short={host,sid,key,raw:j.data};
+      const k=await crypto.subtle.importKey('raw',b64(key),'AES-GCM',false,['decrypt']);
+      d=await unzip(new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv:b64(iv)},k,b64(ct))));}catch{return die('bad');}
+  }else{
+    if(h.length<40) return die('bad');
+    try{d=await unzip(b64(h));}catch{return die('bad');}
+  }
   if(!d||!Array.isArray(d.legs)||!Array.isArray(d.stops)||!d.stops.length) return die('bad');
   V.d=d;
   if(!(d.exp>Date.now())) return die('exp');
@@ -185,7 +199,8 @@ async function boot(){
   else build();
   $('#cover').hidden=true;
   setInterval(check,30e3);
-  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible') check();});
+  if(V.short) setInterval(shortPoll,60e3);
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){check();shortPoll();}});
 }
 function check(){if(!V.dead&&V.d&&!(V.d.exp>Date.now())) die('exp');}
 function loadMaps(key){   // 用分享人網站的 Google 金鑰載入地圖（金鑰有限制只能在這個網站使用）
@@ -218,23 +233,14 @@ function itinHTML(){
 function build(){
   const d=V.d,wide=innerWidth>=900;V.built=true;
   $('#app').hidden=false;
-  $('#exp').textContent=`到 ${when(d.exp)} 失效`;
-  $('#tname').textContent=d.name||'路線';
-  if(d.date){$('#tdate').hidden=false;$('#tdate').textContent=tripDate(d.date);}
-  document.title=(d.name||'路線')+'｜路線分享';
+  headHTML();
   V.stops=d.stops.map((s,i)=>({...s,i}));
   itinHTML();
   map=new google.maps.Map($('#map'),{center:LL(V.stops[0].p),zoom:14,disableDefaultUI:true,zoomControl:wide,gestureHandling:'greedy',clickableIcons:false,keyboardShortcuts:wide});
   iw=new google.maps.InfoWindow();
   let k='map';try{k=localStorage.getItem('shareLayer')==='sat'?'sat':'map';}catch{}
   setLayer(k);
-  V.stops.forEach(s=>{   // 站點：圓點裡面寫站號
-    const c=d.legs[s.g]?.c||'#2d8e95',txt=s.no==='出發'?'出':s.no==='起'?'起':String(+s.no);
-    const m=s.mk=new google.maps.Marker({map,position:LL(s.p),title:s.n,zIndex:isStart(s)?60:70+s.i,
-      icon:{path:google.maps.SymbolPath.CIRCLE,scale:12,fillColor:c,fillOpacity:1,strokeColor:'#ffffff',strokeWeight:2.5},
-      label:{text:txt,color:'#ffffff',fontSize:'12px',fontWeight:'700'}});
-    m.addListener('click',()=>{iw.setContent(popup(s));iw.open({map,anchor:m});});
-  });
+  makeStops();
   drawShapes();
   if(d.lo&&d.lo.u&&d.lo.id&&d.lo.w) loInit();
   $('#fitBtn').onclick=()=>{V.sel=-1;itinHTML();styleLegs();fit();};
@@ -243,6 +249,48 @@ function build(){
   $('#grab').onclick=()=>$('#side').classList.toggle('big');
   setTimeout(fit,0);
   routeAll();
+}
+function headHTML(){
+  const d=V.d;$('#exp').textContent=`到 ${when(d.exp)} 失效`;$('#tname').textContent=d.name||'路線';
+  $('#tdate').hidden=!d.date;if(d.date) $('#tdate').textContent=tripDate(d.date);
+  document.title=(d.name||'行程')+'｜旅遊平台';
+}
+function makeStops(){   // 站點：圓點裡面寫站號
+  V.stops.forEach(s=>{
+    const c=V.d.legs[s.g]?.c||'#2d8e95',txt=s.no==='出發'?'出':s.no==='起'?'起':String(+s.no);
+    const m=s.mk=new google.maps.Marker({map,position:LL(s.p),title:s.n,zIndex:isStart(s)?60:70+s.i,
+      icon:{path:google.maps.SymbolPath.CIRCLE,scale:12,fillColor:c,fillOpacity:1,strokeColor:'#ffffff',strokeWeight:2.5},
+      label:{text:txt,color:'#ffffff',fontSize:'12px',fontWeight:'700'}});
+    m.addListener('click',()=>{iw.setContent(popup(s));iw.open({map,anchor:m});});
+  });
+}
+/* 短連結：每分鐘看一次分享人有沒有更新內容（或停止分享） */
+async function shortFetch(){
+  const S=V.short;let r;try{r=await fetch(`https://${S.host}/blob/${S.sid}`,{cache:'no-store'});}catch{return {err:'net'};}
+  if(r.status===404||r.status===410) return {err:'exp'};
+  if(!r.ok) return {err:'net'};
+  try{const j=await r.json();if(j.data===S.raw) return {same:true};
+    const [iv,ct]=String(j.data).split('.'),k=await crypto.subtle.importKey('raw',b64(S.key),'AES-GCM',false,['decrypt']);
+    const gz=new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv:b64(iv)},k,b64(ct)));
+    const d=JSON.parse(await new Response(new Blob([gz]).stream().pipeThrough(new DecompressionStream('gzip'))).text());
+    return {d,raw:j.data};}catch{return {err:'bad'};}
+}
+async function shortPoll(){
+  if(V.dead||!V.short) return;
+  const r=await shortFetch();
+  if(r.err==='exp') return die('exp');
+  if(!r.d) return;
+  V.short.raw=r.raw;applyUpdate(r.d);
+}
+function applyUpdate(nd){   // 分享人更新了路線：原地換掉行程資訊區和地圖上的路線、站點、畫線（回傳位置不受影響）
+  if(!nd||!Array.isArray(nd.legs)||!Array.isArray(nd.stops)||!nd.stops.length) return;
+  nd.lo=V.d.lo;V.d=nd;
+  if(!(nd.exp>Date.now())) return die('exp');
+  if(!V.built) return;   // 還沒開始看（要先回傳位置）：之後打開就是新內容
+  iw.close();V.stops.forEach(s=>s.mk?.setMap(null));V.legs.forEach(L=>L?.o.forEach(x=>x.setMap(null)));(V.dobjs||[]).forEach(x=>x.setMap(null));
+  V.legs=[];V.dobjs=[];V.sel=-1;V.bounds=null;
+  headHTML();V.stops=nd.stops.map((s,i)=>({...s,i}));itinHTML();makeStops();drawShapes();routeAll();
+  const t=$('#vtoast');t.textContent='分享人更新了路線，已經換成最新的內容';t.hidden=false;clearTimeout(V.tt);V.tt=setTimeout(()=>{t.hidden=true;},5000);
 }
 function setLayer(k){
   V.layer=k;map.setMapTypeId(k==='sat'?'hybrid':'roadmap');
@@ -268,6 +316,7 @@ function fit(){const b=V.bounds&&!V.bounds.isEmpty()?V.bounds:V.stops.reduce((b,
 
 /* ---------- 路線：每段開車路線打開時才向 Google 規劃（照分享人拖過的點走） ---------- */
 async function routeAll(){
+  const gen=V.gen=(V.gen||0)+1;   // 內容更新時，舊的規劃結果不要畫上去
   const d=V.d,svc=new google.maps.DirectionsService(),A=[],B=[],diff=[];let fail=0,quota=false,denied=false;
   d.legs.forEach((g,i)=>{B[i]=V.stops.find(s=>s.g===i&&!isStart(s))?.p;A[i]=V.stops.find(s=>s.g===i&&isStart(s))?.p||B[i-1];});
   V.bounds=new google.maps.LatLngBounds();
@@ -286,9 +335,10 @@ async function routeAll(){
         if((g.km&&Math.abs(m-g.km*1000)>Math.max(150,g.km*1000*.03))||off(s0,A[i])>150||off(e0,B[i])>150) diff.push(i);
       }else{fail++;if(st==='OVER_QUERY_LIMIT') quota=true;if(st==='REQUEST_DENIED') denied=true;}
     }
+    if(gen!==V.gen) return;
     drawLeg(i,path.filter(Boolean),g.m==='r'||!ok);
   }
-  if(V.dead) return;
+  if(V.dead||gen!==V.gen) return;
   const dn=diff.map(i=>`「${V.stops.find(s=>s.g===i&&!isStart(s))?.n||'第'+(i+1)+'段'}」`).join('、');
   const w=[fail?(quota?'今天的地圖額度已經用完，路線先用虛線直線代替，明天會恢復。':denied?'地圖金鑰沒有開放路線服務，路線先用虛線直線代替。':`有 ${fail} 段路線暫時讀不到，先用虛線直線代替。`):'',
     diff.length?`往${dn}的路線，Google 這次規劃的可能跟分享人原本的不一樣，請跟分享人確認。`:''].filter(Boolean).join(' ');
@@ -314,18 +364,19 @@ const DC=['#d93025','#1a73e8','#f9ab00','#188038','#202124'],DW=[3,5,8];
 function offsetLL(c,m,deg){const R=6371000,b=deg*Math.PI/180,la=c[0]*Math.PI/180,lo=c[1]*Math.PI/180,d=m/R;const la2=Math.asin(Math.sin(la)*Math.cos(d)+Math.cos(la)*Math.sin(d)*Math.cos(b)),lo2=lo+Math.atan2(Math.sin(b)*Math.sin(d)*Math.cos(la),Math.cos(d)-Math.sin(la)*Math.sin(la2));return [la2*180/Math.PI,lo2*180/Math.PI];}
 const fmtM=m=>m>=1000?(m/1000).toFixed(m>=10000?0:1)+' 公里':Math.round(m)+' 公尺';
 function drawShapes(){
+  V.dobjs=V.dobjs||[];const keep=o=>{V.dobjs.push(o);return o;};
   const items=(V.d.dr||[]).filter(x=>x&&Array.isArray(x.p)&&x.p.length&&DC[x.c]!==undefined),G=google.maps,lbl=[];
   items.forEach(x=>{
     const c=DC[x.c],W=DW[x.w]||5,path=x.p.map(LL),z=62;
     const line=(pts,extra=[])=>{
-      if(!x.dash) new G.Polyline({map,path:pts,strokeColor:'#fff',strokeWeight:W+3,strokeOpacity:.75,clickable:false,zIndex:z-1});
-      new G.Polyline({map,path:pts,strokeColor:c,strokeWeight:W,strokeOpacity:x.dash?0:.95,icons:[...(x.dash?dashIcons(c,W):[]),...extra],clickable:false,zIndex:z});
+      if(!x.dash) keep(new G.Polyline({map,path:pts,strokeColor:'#fff',strokeWeight:W+3,strokeOpacity:.75,clickable:false,zIndex:z-1}));
+      keep(new G.Polyline({map,path:pts,strokeColor:c,strokeWeight:W,strokeOpacity:x.dash?0:.95,icons:[...(x.dash?dashIcons(c,W):[]),...extra],clickable:false,zIndex:z}));
     };
-    if(x.t==='dot') new G.Marker({map,position:path[0],clickable:false,zIndex:z+1,icon:{path:G.SymbolPath.CIRCLE,scale:[6,8,11][x.w]||8,fillColor:c,fillOpacity:1,strokeColor:'#fff',strokeWeight:2.5}});
+    if(x.t==='dot') keep(new G.Marker({map,position:path[0],clickable:false,zIndex:z+1,icon:{path:G.SymbolPath.CIRCLE,scale:[6,8,11][x.w]||8,fillColor:c,fillOpacity:1,strokeColor:'#fff',strokeWeight:2.5}}));
     else if(x.t==='free'||x.t==='line') line(path);
     else if(x.t==='arrow') line(path,[{icon:{path:G.SymbolPath.FORWARD_CLOSED_ARROW,scale:Math.max(3,W*.85),strokeColor:c,strokeOpacity:1,strokeWeight:1,fillColor:c,fillOpacity:1},offset:'100%'}]);
-    else if(x.t==='poly'){new G.Polygon({map,paths:path,strokeColor:c,strokeWeight:W,strokeOpacity:x.dash?0:.95,fillColor:c,fillOpacity:.18,clickable:false,zIndex:z-2});if(x.dash) line([...path,path[0]]);}
-    else if(x.t==='circle'&&x.r>0){new G.Circle({map,center:path[0],radius:x.r,strokeColor:c,strokeWeight:W,strokeOpacity:x.dash?0:.95,fillColor:c,fillOpacity:.12,clickable:false,zIndex:z-2});if(x.dash) line(Array.from({length:73},(_,i)=>LL(offsetLL(x.p[0],x.r,i*5))));lbl.push({ll:offsetLL(x.p[0],x.r,0),s:'半徑 '+fmtM(x.r),k:'top',c});}
+    else if(x.t==='poly'){keep(new G.Polygon({map,paths:path,strokeColor:c,strokeWeight:W,strokeOpacity:x.dash?0:.95,fillColor:c,fillOpacity:.18,clickable:false,zIndex:z-2}));if(x.dash) line([...path,path[0]]);}
+    else if(x.t==='circle'&&x.r>0){keep(new G.Circle({map,center:path[0],radius:x.r,strokeColor:c,strokeWeight:W,strokeOpacity:x.dash?0:.95,fillColor:c,fillOpacity:.12,clickable:false,zIndex:z-2}));if(x.dash) line(Array.from({length:73},(_,i)=>LL(offsetLL(x.p[0],x.r,i*5))));lbl.push({ll:offsetLL(x.p[0],x.r,0),s:'半徑 '+fmtM(x.r),k:'top',c});}
     if(x.t==='text'&&x.s) lbl.push({ll:x.p[0],s:String(x.s).slice(0,30),k:'dtx',c});
     if(x.t==='line'&&x.p.length>1){let m=0;for(let i=1;i<x.p.length;i++) m+=dist(x.p[i-1],x.p[i]);lbl.push({ll:x.p.at(-1),s:fmtM(m),k:'',c});}
   });
@@ -335,7 +386,7 @@ function drawShapes(){
     onRemove(){this.el?.remove();}
     draw(){const pr=this.getProjection?.();if(!pr||!this.el) return;this.el.innerHTML=lbl.map(l=>{const q=pr.fromLatLngToDivPixel(LL(l.ll));return `<div class="dlb ${l.k}" style="left:${q.x}px;top:${q.y}px;--dc:${l.c}">${esc(l.s)}</div>`;}).join('');}
   }
-  new Labels().setMap(map);
+  const lb=new Labels();lb.setMap(map);keep(lb);
 }
 /* ---------- 回傳我的位置（分享人有開啟時才有）：對方自己按下才開始，頁面開著時約每 10 秒傳一次 ---------- */
 const LO={peers:[],peerT:0,pview:null,skew:0,on:false,watch:null,pos:null,sent:null,sentT:0,timer:0,lock:null,me:null,acc:null,busy:false};
