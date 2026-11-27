@@ -128,6 +128,14 @@ button{font:inherit;color:inherit}
   .top .pill{font-size:15px;padding:4px 12px}
   .side{grid-row:3;height:46dvh;border-radius:20px 20px 0 0;margin-top:-18px;position:relative;z-index:6;box-shadow:0 -6px 20px rgba(16,32,40,.12);padding:6px 12px calc(14px + env(safe-area-inset-bottom));transition:height .28s ease}
   .side.big{height:82dvh}
+  .side.min{height:auto;padding-bottom:calc(10px + env(safe-area-inset-bottom))}   /* 收起：只留把手、進度列（沒選站時留一行摘要） */
+  .side.min>:not(.grab):not(#prog):not(.mini){display:none!important}
+  .side.min #prog{margin-bottom:0}
+  .side.min.hasprog .mini{display:none}
+  .mini{display:none}
+  .side.min .mini{display:flex;align-items:baseline;gap:8px;padding:2px 4px 4px;cursor:pointer}
+  .mini b{flex:none;white-space:nowrap;font-size:16px;color:color-mix(in srgb,var(--acc-itin) 62%,var(--it-mixto))}
+  .mini span{flex:1;min-width:0;font-size:14px;color:var(--it-sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .grab{display:block;width:44px;height:5px;border-radius:3px;background:var(--it-pill-line);margin:4px auto 10px;border:0;padding:0;cursor:pointer;position:relative}
   .grab::before{content:"";position:absolute;inset:-14px -40px}
   .tools{top:10px;right:10px}
@@ -141,6 +149,7 @@ button{font:inherit;color:inherit}
   <div class="lo-pop" id="loPop" hidden></div>
   <aside class="side" id="side">
     <button class="grab" id="grab" aria-label="展開或收起行程資訊"></button>
+    <div class="mini" id="mini"><b>行程資訊區</b><span id="miniSum"></span></div>
     <section class="lo" id="lo" hidden>
       <div class="lo-h"><span class="lo-dot" id="loDot"></span><b id="loTitle">分享人請你回傳位置</b></div>
       <p class="lo-p" id="loTxt">按下後，你的位置大約每 10 秒傳給分享人，只在這個頁面開著時傳送；按「停止」或連結到期就不再傳。</p>
@@ -233,7 +242,7 @@ const LL=p=>new google.maps.LatLng(p[0],p[1]);
 function itinHTML(){
   const d=V.d;let h='',min=0,km=0,cnt=0;
   d.legs.forEach(g=>{if(g.m==='d'){min+=g.min||0;km+=g.km||0;cnt++;}});
-  $('#sum').textContent=`${d.legs.length} 段`+(cnt?` · 共 ${min} 分 · ${km.toFixed(1)} 公里`:'');
+  $('#sum').textContent=`${d.legs.length} 段`+(cnt?` · 共 ${min} 分 · ${km.toFixed(1)} 公里`:'');$('#miniSum').textContent=`${d.name||''} · `+$('#sum').textContent;
   V.stops.forEach(s=>{
     const g=d.legs[s.g],first=s.i===0;
     if(s.no==='起') h+='<div class="itin-gap">這一段不從上一站出發</div>';
@@ -266,9 +275,28 @@ function build(){
   $('#meBtn').onclick=()=>{V.follow=true;followMe(true);meBtnRender();};
   map.addListener('dragstart',()=>{if(V.follow){V.follow=false;meBtnRender();}});
   progPlace();addEventListener('resize',progPlace);
-  $('#grab').onclick=()=>$('#side').classList.toggle('big');
+  sheetInit();
   setTimeout(fit,0);
   routeAll();
+}
+/* 手機下方欄位：點把手在「收起／一般」切換，往上滑展開到最高，往下滑收起；記住上次的狀態 */
+function sheetSet(st){
+  const sd=$('#side');sd.classList.toggle('min',st==='min');sd.classList.toggle('big',st==='big');
+  $('#grab').setAttribute('aria-label',st==='min'?'展開行程資訊':'收起行程資訊');
+  try{localStorage.setItem('shareSheet',st==='min'?'min':'');}catch{}
+}
+const sheetNow=()=>{const c=$('#side').classList;return c.contains('min')?'min':c.contains('big')?'big':'mid';};
+function sheetInit(){
+  let st='';try{st=localStorage.getItem('shareSheet')||'';}catch{}
+  if(st==='min') sheetSet('min');
+  const g=$('#grab');let y0=null,moved=false;
+  g.onclick=()=>{if(moved){moved=false;return;}sheetSet(sheetNow()==='min'?'mid':'min');};
+  $('#mini').onclick=()=>sheetSet('mid');
+  const start=e=>{y0=(e.touches?e.touches[0]:e).clientY;moved=false;};
+  const end=e=>{if(y0===null) return;const y=(e.changedTouches?e.changedTouches[0]:e).clientY,dy=y-y0;y0=null;
+    if(Math.abs(dy)<30) return;moved=true;const now=sheetNow();
+    if(dy<0) sheetSet(now==='min'?'mid':'big');else sheetSet(now==='big'?'mid':'min');};
+  [g,$('#mini')].forEach(el=>{el.addEventListener('touchstart',start,{passive:true});el.addEventListener('touchend',end);el.addEventListener('pointerdown',e=>{if(e.pointerType==='mouse') start(e);});el.addEventListener('pointerup',e=>{if(e.pointerType==='mouse') end(e);});});
 }
 function headHTML(){
   const d=V.d;$('#exp').textContent=`到 ${when(d.exp)} 失效`;$('#tname').textContent=d.name||'路線';
@@ -468,7 +496,7 @@ function progRender(){
   const el=$('#prog');if(!el) return;
   progLink(null,null);
   $('#tip').textContent=LO.on?'點一站，看你離那一站多遠；地圖會跟著你移動，拖動地圖後按右上角「◎」回到自己的位置。':'點一站，地圖會移到「上一站 → 這一站」的路線；按地圖右上角的框框看整條路線。';
-  const on=LO.on&&V.built;el.hidden=!on;if(!on) return;
+  const on=LO.on&&V.built;el.hidden=!on;$('#side').classList.toggle('hasprog',on);if(!on) return;
   const T=V.stops[PG.tg];
   if(!T){el.innerHTML='<span class="pg-tip">點一站，看你離那一站多遠</span>';return;}
   const tm=T.a&&T.d?`${hhmm2(T.a)} 到`:T.a?`${hhmm2(T.a)} 到`:T.d?`${hhmm2(T.d)} 出發`:'';
