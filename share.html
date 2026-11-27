@@ -52,6 +52,35 @@ button{font:inherit;color:inherit}
 .tag.rail{background:color-mix(in srgb,#6f9ae0 18%,transparent);color:#3d6cc0}
 .tag.ctl{background:#fde6e3;color:#b3261e}
 .itin-gap{margin:2px 4px;font-size:13px;color:var(--it-miss)}
+.lo{margin:0 0 10px;padding:10px 12px;border-radius:16px;background:var(--it-white);border:1px solid #f3c79f}
+.lo-h{display:flex;align-items:center;gap:8px;font-size:16px}
+.lo-dot{width:12px;height:12px;border-radius:50%;background:#e8710a;flex:none}
+.lo.on .lo-dot{animation:lop 1.6s ease-out infinite}
+@keyframes lop{0%{box-shadow:0 0 0 0 rgba(232,113,10,.55)}100%{box-shadow:0 0 0 10px rgba(232,113,10,0)}}
+.lo-p{margin:4px 0 8px;font-size:13.5px;color:var(--it-sub);line-height:1.5}
+.lo-p.err{color:var(--del)}
+.lo-a{display:flex;gap:8px}
+.lo-go{flex:1;height:42px;border:0;border-radius:12px;background:#e8710a;color:#fff;font-weight:700;font-size:16px;cursor:pointer}
+.lo-stop{height:42px;padding:0 16px;border:1px solid var(--it-pill-line);border-radius:12px;background:var(--it-white);font-weight:600;cursor:pointer}
+.lo.on .lo-go{display:none}
+/* 回傳中：卡片收成標題列上的一個小橘點，點開才看狀態、停止 */
+.lo-badge{flex:none;width:30px;height:30px;border-radius:50%;border:1px solid #f3c79f;background:var(--it-white);display:grid;place-items:center;padding:0;cursor:pointer}
+.lo-badge i{width:12px;height:12px;border-radius:50%;background:#e8710a;animation:lop 1.6s ease-out infinite}
+.lo-badge.err{border-color:#f2b8b5}
+.lo-badge.err i{background:#d93025;animation:none}
+.lo-badge[aria-expanded="true"]{box-shadow:0 0 0 3px rgba(232,113,10,.25)}
+.lo-pop{position:fixed;top:calc(var(--mh) + 6px);left:12px;z-index:30;width:min(360px,calc(100vw - 24px));filter:drop-shadow(0 10px 24px rgba(16,32,40,.22))}
+.lo-pop .lo{margin:0}
+.lo-peers{margin-top:8px;padding-top:8px;border-top:1px solid var(--it-line);font-size:14px;color:var(--it-sub)}
+.lo-peers b{color:#9a3f00}
+.lo-peers button{border:0;background:none;padding:0;margin:0 6px 0 0;font:inherit;color:#9a3f00;font-weight:700;cursor:pointer;text-decoration:underline}
+.locs{position:absolute;left:0;top:0}
+.lcm{position:absolute;transform:translate(-9px,-9px);display:flex;align-items:center;gap:6px;white-space:nowrap;pointer-events:none}
+.lcm i{width:18px;height:18px;border-radius:50%;background:#e8710a;border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.45);flex:none}
+.lcm b{padding:1px 7px;border-radius:7px;background:rgba(255,255,255,.95);color:#9a3f00;font-size:13px;font-weight:700;box-shadow:0 1px 3px rgba(0,0,0,.25);line-height:1.45}
+.lcm small{margin-left:5px;font-weight:500;color:#71818c;font-size:11.5px}
+.lcm.old i{background:#9aa5ad}
+.lcm.old b{color:#5b6876}
 .tip{margin:10px 4px 0;font-size:13px;line-height:1.55;color:var(--it-sub)}
 .warn{margin:10px 0 0;padding:8px 10px;border-radius:10px;background:var(--warn-soft);color:var(--warn);font-size:14px}
 /* 地圖按鈕 */
@@ -86,9 +115,16 @@ button{font:inherit;color:inherit}
 </head>
 <body>
 <div class="app" id="app" hidden>
-  <header class="top"><span class="pill">路線分享</span><span class="ro">只能看</span><span class="exp" id="exp"></span></header>
+  <header class="top"><span class="pill">路線分享</span><span class="ro">只能看</span><button class="lo-badge" id="loBadge" hidden aria-expanded="false" title="正在回傳你的位置（點一下查看或停止）" aria-label="正在回傳你的位置，點一下查看或停止"><i></i></button><span class="exp" id="exp"></span></header>
+  <div class="lo-pop" id="loPop" hidden></div>
   <aside class="side" id="side">
     <button class="grab" id="grab" aria-label="展開或收起行程資訊"></button>
+    <section class="lo" id="lo" hidden>
+      <div class="lo-h"><span class="lo-dot" id="loDot"></span><b id="loTitle">分享人請你回傳位置</b></div>
+      <p class="lo-p" id="loTxt">按下後，你的位置大約每 10 秒傳給分享人，只在這個頁面開著時傳送；按「停止」或連結到期就不再傳。</p>
+      <div class="lo-a"><button class="lo-go" id="loGo">回傳我的位置</button><button class="lo-stop" id="loStop" hidden>停止</button></div>
+      <div class="lo-peers" id="loPeers" hidden></div>
+    </section>
     <section class="sec">
       <div class="sec-h"><span class="eyebrow">行程資訊區</span><span class="count" id="sum"></span></div>
       <div class="trip-bar"><span class="trip-d" id="tdate" hidden></span><b class="trip-n" id="tname"></b></div>
@@ -119,7 +155,7 @@ let map,iw;
 
 function cover(icon,title,text){$('#cover').hidden=false;$('#cover .box').innerHTML=`<div class="ic">${icon}</div><h1>${esc(title)}</h1><p>${esc(text)}</p>`;}
 function die(kind){
-  V.dead=true;$('#app').hidden=true;
+  V.dead=true;$('#app').hidden=true;if(typeof LO!=='undefined'&&LO.on) loStop(false);
   if(kind==='exp') cover('⏱','這個連結已經失效','請跟分享給你的人要新的連結。');
   else if(kind==='bad') cover('！','連結不完整','請確認連結有完整複製（包含 # 後面的部分）。');
   else if(kind==='old') cover('！','這個瀏覽器太舊','請更新手機系統，或改用最新版的 Chrome、Safari 開啟。');
@@ -192,6 +228,7 @@ function build(){
     m.addListener('click',()=>{iw.setContent(popup(s));iw.open({map,anchor:m});});
   });
   drawShapes();
+  if(d.lo&&d.lo.u&&d.lo.id&&d.lo.w) loInit();
   $('#fitBtn').onclick=()=>{V.sel=-1;itinHTML();styleLegs();fit();};
   $('#layBtn').onclick=()=>setLayer(V.layer==='sat'?'map':'sat');
   $('#itin').onclick=e=>{const b=e.target.closest('[data-i]');if(b) pick(V.stops[+b.dataset.i]);};
@@ -291,6 +328,95 @@ function drawShapes(){
     draw(){const pr=this.getProjection?.();if(!pr||!this.el) return;this.el.innerHTML=lbl.map(l=>{const q=pr.fromLatLngToDivPixel(LL(l.ll));return `<div class="dlb ${l.k}" style="left:${q.x}px;top:${q.y}px;--dc:${l.c}">${esc(l.s)}</div>`;}).join('');}
   }
   new Labels().setMap(map);
+}
+/* ---------- 回傳我的位置（分享人有開啟時才有）：對方自己按下才開始，頁面開著時約每 10 秒傳一次 ---------- */
+const LO={peers:[],peerT:0,pview:null,skew:0,on:false,watch:null,pos:null,sent:null,sentT:0,timer:0,lock:null,me:null,acc:null,busy:false};
+function loDev(){let v='';try{v=localStorage.getItem('shareDev')||'';}catch{}if(!/^[a-z0-9]{12}$/.test(v)){v=Array.from(crypto.getRandomValues(new Uint8Array(12)),b=>'abcdefghijkmnpqrstuvwxyz23456789'[b&31]).join('');try{localStorage.setItem('shareDev',v);}catch{}}return v;}
+function loInit(){
+  $('#lo').hidden=false;$('#loTitle').textContent='分享人請你回傳位置';
+  if(V.d.lo.m) $('#loTxt').textContent='按下後，你的位置大約每 10 秒傳給分享人，也會讓同一趟的其他人看到；你也會看到他們的位置。只在這個頁面開著時傳送；按「停止」或連結到期就不再傳。';
+  $('#loPeers').onclick=e=>{const b=e.target.closest('[data-pk]');if(!b) return;const p=LO.peers[+b.dataset.pk];if(p){map.panTo(LL([p.lat,p.lng]));if(map.getZoom()<15) map.setZoom(15);}};
+  $('#loGo').onclick=loStart;
+  $('#loBadge').onclick=e=>{e.stopPropagation();loPop($('#loPop').hidden);};
+  document.addEventListener('click',e=>{if(!$('#loPop').hidden&&!e.target.closest('#loPop,#loBadge')) loPop(false);});$('#loStop').onclick=()=>loStop(true,'已停止回傳位置。');
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&LO.on){loWake();loSend(true);}});
+}
+function loMsg(t,err){const p=$('#loTxt');p.textContent=t;p.classList.toggle('err',!!err);$('#loBadge').classList.toggle('err',!!err&&LO.on);}
+function loDock(on){   // 回傳中：卡片搬進小橘點的彈出框（平常收起來）；停止後搬回行程資訊上方
+  const card=$('#lo'),pop=$('#loPop'),badge=$('#loBadge');
+  if(on){pop.append(card);badge.hidden=false;loPop(false);}
+  else{$('#side').insertBefore(card,$('#side .sec'));badge.hidden=true;badge.classList.remove('err');pop.hidden=true;badge.setAttribute('aria-expanded','false');}
+}
+function loPop(open){$('#loPop').hidden=!open;$('#loBadge').setAttribute('aria-expanded',String(open));}
+function loStart(){
+  if(!navigator.geolocation) return loMsg('這個瀏覽器不能定位。',true);
+  if(!isSecureContext) return loMsg('要用 https 網址開啟才能定位。',true);
+  LO.on=true;loDock(true);$('#lo').classList.add('on');$('#loStop').hidden=false;$('#loTitle').textContent=V.d.lo.m?'正在回傳你的位置給分享人和同一趟的人':'正在回傳你的位置給分享人';loMsg('定位中…');
+  LO.watch=navigator.geolocation.watchPosition(loPos,loErr,{enableHighAccuracy:true,maximumAge:5000,timeout:20000});
+  clearInterval(LO.timer);LO.timer=setInterval(()=>{loSend(false);loPeers();},10000);
+  loWake();
+}
+async function loStop(tell,msg,err){
+  const was=LO.on;LO.on=false;clearInterval(LO.timer);if(LO.watch!==null) navigator.geolocation.clearWatch(LO.watch);LO.watch=null;
+  try{LO.lock?.release();}catch{}LO.lock=null;
+  LO.peers=[];loPeerRender();loDock(false);
+  $('#lo').classList.remove('on');$('#loStop').hidden=true;$('#loTitle').textContent='分享人請你回傳位置';$('#loGo').textContent='重新回傳我的位置';
+  loMsg(msg||'',err);
+  if(tell&&was){const lo=V.d.lo;try{await fetch(lo.u.replace(/\/+$/,'')+'/loc/stop',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:lo.id,w:lo.w,dev:loDev()}),keepalive:true});}catch{}}
+}
+async function loWake(){try{if('wakeLock' in navigator&&document.visibilityState==='visible'&&!LO.lock){LO.lock=await navigator.wakeLock.request('screen');LO.lock.addEventListener('release',()=>{LO.lock=null;});}}catch{}}
+function loErr(e){
+  if(e.code===1) loStop(false,'沒有定位權限：請在瀏覽器或手機設定裡，允許這個網站使用位置，再按一次。'+(/\bLine\//i.test(navigator.userAgent)?'在 LINE 裡開的話，請改用 Safari 或 Chrome 開啟。':''),true);
+  else if(!LO.pos) loMsg('暫時抓不到位置：到比較空曠的地方，或確認手機的定位有打開。',true);
+}
+function loPos(p){
+  if(!LO.on) return;
+  const c=p.coords;LO.pos={lat:c.latitude,lng:c.longitude,acc:c.accuracy||0,hd:Number.isFinite(c.heading)?c.heading:null,sp:Number.isFinite(c.speed)?c.speed:null};
+  const ll=LL([LO.pos.lat,LO.pos.lng]);
+  if(!LO.me){LO.me=new google.maps.Marker({map,position:ll,clickable:false,zIndex:90,title:'你的位置',icon:{path:google.maps.SymbolPath.CIRCLE,scale:8,fillColor:'#1a73e8',fillOpacity:1,strokeColor:'#ffffff',strokeWeight:3}});
+    LO.acc=new google.maps.Circle({map,center:ll,radius:LO.pos.acc,strokeColor:'#1a73e8',strokeWeight:1,strokeOpacity:.35,fillColor:'#1a73e8',fillOpacity:.1,clickable:false,zIndex:5});}
+  else{LO.me.setPosition(ll);LO.acc.setCenter(ll);LO.acc.setRadius(LO.pos.acc);}
+  const moved=LO.sent?dist([LO.sent.lat,LO.sent.lng],[LO.pos.lat,LO.pos.lng]):1e9;
+  const gap=Date.now()-LO.sentT;
+  if(!LO.sent||(moved>20&&gap>=3000)) loSend(true);
+  else if(moved>20){clearTimeout(LO.soon);LO.soon=setTimeout(()=>loSend(true),3000-gap);}   // 剛傳過：3 秒後補傳
+}
+async function loSend(force){   // 每 10 秒（或移動超過 20 公尺）送一次最新位置
+  if(!LO.on||!LO.pos||LO.busy) return;
+  if(!force&&Date.now()-LO.sentT<9000) return;
+  const lo=V.d.lo;LO.busy=true;
+  try{
+    const r=await fetch(lo.u.replace(/\/+$/,'')+'/loc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:lo.id,w:lo.w,dev:loDev(),...LO.pos})});
+    if(r.status===410) return loStop(false,'連結已經到期，已停止回傳位置。',true);
+    if(r.status===403) return loStop(false,'這個連結不能回傳位置（分享人可能已經停止接收）。',true);
+    if(!r.ok) throw new Error(String(r.status));
+    LO.sent={...LO.pos};LO.sentT=Date.now();if(V.d.lo.m&&Date.now()-LO.peerT>8000) setTimeout(loPeers,300);
+    const d=new Date();loMsg(`最後傳送 ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}${LO.pos.acc>150?`（定位誤差約 ${Math.round(LO.pos.acc)} 公尺）`:''}。請讓這個頁面保持開著；鎖螢幕或切到別的 App 會暫停。`);
+  }catch{if(LO.on) loMsg('傳送失敗，會自動再試；請確認網路。',true);}
+  finally{LO.busy=false;}
+}
+/* 同一趟互相看到：自己正在回傳時，每 10 秒讀一次同一趟其他人的位置 */
+const agoTxt=t=>{const s=Math.max(0,Math.round((Date.now()+LO.skew-t)/1000));return s<20?'剛剛':s<60?`${s} 秒前`:s<3600?`${Math.floor(s/60)} 分鐘前`:new Date(t).toTimeString().slice(0,5);};
+async function loPeers(){
+  if(!LO.on||!V.d.lo?.m||!LO.sent) return;
+  LO.peerT=Date.now();const lo=V.d.lo;
+  try{const r=await fetch(lo.u.replace(/\/+$/,'')+'/peers',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:lo.id,w:lo.w,dev:loDev()})});
+    if(!r.ok) return;const j=await r.json();if(!LO.on) return;LO.skew=(+j.now||Date.now())-Date.now();
+    LO.peers=(j.peers||[]).filter(p=>Number.isFinite(p.lat)&&Number.isFinite(p.lng));loPeerRender();}catch{}
+}
+function loPeerRender(){
+  const box=$('#loPeers'),ps=LO.peers,old=p=>p.stopped||Date.now()+LO.skew-p.t>120e3;
+  box.hidden=!(LO.on&&V.d.lo?.m);
+  if(!box.hidden) box.innerHTML=ps.length?'同一趟：'+ps.map((p,i)=>`<button data-pk="${i}">${esc(p.name)}</button><small>${p.stopped?'已停止':agoTxt(p.t)}</small>`).join('　'):'同一趟的其他人還沒開始回傳位置。';
+  if(!LO.pview&&ps.length){
+    class P extends google.maps.OverlayView{
+      onAdd(){this.el=document.createElement('div');this.el.className='locs';this.getPanes().floatPane.appendChild(this.el);}
+      onRemove(){this.el?.remove();}
+      draw(){const pr=this.getProjection?.();if(!pr||!this.el) return;this.el.innerHTML=LO.peers.map(p=>{const q=pr.fromLatLngToDivPixel(LL([p.lat,p.lng]));return `<div class="lcm ${old(p)?'old':''}" style="left:${q.x}px;top:${q.y}px"><i></i><b>${esc(p.name)}<small>${p.stopped?'已停止':agoTxt(p.t)}</small></b></div>`;}).join('');}
+    }
+    LO.pview=new P();LO.pview.setMap(map);
+  }
+  LO.pview?.draw();
 }
 boot().catch(()=>die('net'));
 </script>
